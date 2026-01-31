@@ -3,11 +3,15 @@ pipeline {
 
     stages {
 
-        stage('Secret Scan') {
-            steps {
-                sh 'trufflehog filesystem .'
-            }
-        }
+
+stage('Check-Git-Secrets') {
+    steps {
+        sh 'rm -f trufflehog || true'
+        sh 'docker run gesellix/trufflehog --json https://github.com/cekhunal/webapp.git > trufflehog'
+        sh 'cat trufflehog'
+    }
+}
+
 
 stage('Source-Composition-Analysis') {
     steps {
