@@ -8,42 +8,47 @@ pipeline {
 
     stage('Check-Git-Secrets') {
     steps {
-        sh '''
-            # 1. Clear previous runs
-            rm -f trufflehog.json
+        script {
+            // We use returnStatus so Jenkins doesn't stop the build instantly
+            def exitCode = sh(
+                script: '''
+                    # 1. Clear old files
+                    rm -f trufflehog.json
+                    
+                    echo "--- Running Scan ---"
 
-            echo "--- Executing TruffleHog Scan ---"
+                    # 2. Force the --json flag to be the FIRST argument after 'filesystem'
+                    # We use /work (the mapped volume) to ensure paths are correct
+                    docker run --rm \
+                        -v "${WORKSPACE}:/work" \
+                        -w /work \
+                        ghcr.io/trufflesecurity/trufflehog:latest \
+                        filesystem --json --no-update /work > trufflehog.json 2> trufflehog_debug.log || true
 
-            # 2. Run Docker with absolute workspace path and internal redirection
-            # We use --json to enable the data stream
-            # We use --fail to ensure Jenkins fails IF secrets are found
-            docker run --rm \
-                -v "${WORKSPACE}:/work" \
-                -w /work \
-                ghcr.io/trufflesecurity/trufflehog:latest \
-                filesystem . \
-                --json \
-                --no-update > trufflehog.json || TRUFFLE_EXIT=$?
+                    # 3. Fix permissions immediately
+                    chmod 644 trufflehog.json || true
+                ''',
+                returnStatus: true
+            )
 
-            # 3. Handle permissions (Docker creates files as root)
-            sudo chmod 644 trufflehog.json || true
+            // 4. Inspect the results
+            sh '''
+                if [ -s trufflehog.json ]; then
+                    echo "SUCCESS: JSON report created."
+                    # Show the first few findings to the console
+                    head -n 20 trufflehog.json
+                else
+                    echo "ERROR: Report is empty. Printing debug log below:"
+                    cat trufflehog_debug.log
+                fi
+            '''
 
-            # 4. Verification check
-            if [ -s trufflehog.json ]; then
-                echo "SUCCESS: Found $(grep -c "SourceID" trufflehog.json) potential secrets."
-                # Display JSON for the logs
-                cat trufflehog.json
-            else
-                echo "WARNING: No JSON findings were written to the file."
-                # If the file is empty, it means no secrets were detected
-            fi
-
-            # 5. Respect the exit code if secrets were found
-            if [ "$TRUFFLE_EXIT" == "1" ]; then
-                echo "Build failing due to secrets found."
-                exit 1
-            fi
-        '''
+            // 5. Fail the build if the original process found secrets
+            // TruffleHog returns 1 if secrets are found
+            if (exitCode == 1) {
+                error("Secrets found in repository. Please check trufflehog.json.")
+            }
+        }
     }
     post {
         always {
@@ -51,7 +56,6 @@ pipeline {
         }
     }
 }
-
 
 
 
