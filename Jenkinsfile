@@ -11,13 +11,17 @@ stage('Check-Git-Secrets') {
           docker run --rm \
             -v "$PWD:/work" \
             -w /work \
-            gesellix/trufflehog \
-            sh -c "trufflehog filesystem . --json > trufflehog.json"
+            ghcr.io/trufflesecurity/trufflehog:latest \
+            filesystem /work \
+            --json \
+            --no-update \
+            > trufflehog.json
         '''
         sh 'ls -l trufflehog.json'
         sh 'cat trufflehog.json'
     }
 }
+
 
 
 
