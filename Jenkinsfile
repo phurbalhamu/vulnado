@@ -3,11 +3,11 @@ pipeline {
 
     stages {
 
-
 stage('Check-Git-Secrets') {
     steps {
-        sh 'rm -f trufflehog.json || true'
         sh '''
+          rm -f trufflehog.json
+
           docker run --rm \
             -v "$PWD:/work" \
             -w /work \
@@ -16,11 +16,16 @@ stage('Check-Git-Secrets') {
             --json \
             --no-update \
             > trufflehog.json
+
+          echo "==== FILE EXISTS? ===="
+          ls -lh trufflehog.json || true
+
+          echo "==== FILE CONTENT (JSON) ===="
+          cat trufflehog.json || true
         '''
-        sh 'ls -l trufflehog.json'
-        sh 'cat trufflehog.json'
     }
 }
+
 
 
 
