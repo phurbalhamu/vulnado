@@ -6,11 +6,12 @@ pipeline {
 
 stage('Check-Git-Secrets') {
     steps {
-        sh 'rm -f trufflehog || true'
-        sh 'docker run gesellix/trufflehog --json https://github.com/cekhunal/webapp.git > trufflehog'
-        sh 'cat trufflehog'
+        sh 'rm -f trufflehog.json || true'
+        sh 'docker run --rm -v "$PWD:/work" -w /work gesellix/trufflehog filesystem . --json > trufflehog.json'
+        sh 'cat trufflehog.json'
     }
 }
+
 
 
 stage('Source-Composition-Analysis') {
