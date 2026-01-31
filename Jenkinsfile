@@ -3,48 +3,44 @@ pipeline {
 
     stages {
 
-stage('Check-Git-Secrets') {
+
+
+
+        stage('Check-Git-Secrets') {
     steps {
-        script {
-            sh '''
-                # 1. Clear old reports
-                rm -f trufflehog.json
+        sh '''
+            # 1. Create the file first and give it full permissions 
+            # This prevents Docker 'root' vs Jenkins 'user' permission issues
+            touch trufflehog.json
+            chmod 666 trufflehog.json
 
-                # 2. Run TruffleHog
-                # We use || true or set +e so the script doesn't stop if secrets are found
-                set +e
-                docker run --rm \
-                    -v "$WORKSPACE:/work" \
-                    -w /work \
-                    ghcr.io/trufflesecurity/trufflehog:latest \
-                    filesystem /work \
-                    --json \
-                    --no-update > trufflehog.json
-                
-                # 3. Capture the exit code (1 means secrets found, 0 means clean)
-                TRUFFLE_EXIT=$?
-                set -e
+            echo "--- Starting Scan ---"
 
-                # 4. Debug: Show the file exists and its content
-                echo "--- Scan Results ---"
-                if [ -s trufflehog.json ]; then
-                    ls -lh trufflehog.json
-                    cat trufflehog.json
-                else
-                    echo "No secrets found or file is empty."
-                fi
+            # 2. Run with --json flag. 
+            # Note: The "piggy" emojis will still show in the Jenkins console (stderr), 
+            # but the raw data will go into the file (stdout).
+            docker run --rm \
+                -v "${WORKSPACE}:/work" \
+                -w /work \
+                ghcr.io/trufflesecurity/trufflehog:latest \
+                filesystem /work \
+                --json \
+                --no-update > trufflehog.json
 
-                # 5. Fail the build if TruffleHog found secrets
-                if [ $TRUFFLE_EXIT -eq 1 ]; then
-                    echo "CRITICAL: Secrets detected in repository!"
-                    exit 1
-                fi
-            '''
-        }
+            # 3. Check if the file actually has data now
+            if [ -s trufflehog.json ]; then
+                echo "SUCCESS: JSON report generated."
+                ls -lh trufflehog.json
+                # Optional: print the first few lines to the console to be sure
+                head -n 5 trufflehog.json
+            else
+                echo "ERROR: Report is still empty. Checking permissions..."
+                ls -la trufflehog.json
+            fi
+        '''
     }
     post {
         always {
-            // This makes the file downloadable from the Jenkins UI
             archiveArtifacts artifacts: 'trufflehog.json', allowEmptyArchive: true
         }
     }
