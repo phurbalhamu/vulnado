@@ -7,10 +7,18 @@ pipeline {
 stage('Check-Git-Secrets') {
     steps {
         sh 'rm -f trufflehog.json || true'
-        sh 'docker run --rm -v "$PWD:/work" -w /work gesellix/trufflehog filesystem . --json > trufflehog.json'
+        sh '''
+          docker run --rm \
+            -v "$PWD:/work" \
+            -w /work \
+            gesellix/trufflehog \
+            sh -c "trufflehog filesystem . --json > trufflehog.json"
+        '''
+        sh 'ls -l trufflehog.json'
         sh 'cat trufflehog.json'
     }
 }
+
 
 
 
