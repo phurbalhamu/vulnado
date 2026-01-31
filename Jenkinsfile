@@ -6,36 +6,42 @@ pipeline {
 
 
 
-        stage('Check-Git-Secrets') {
+    stage('Check-Git-Secrets') {
     steps {
         sh '''
-            # 1. Create the file first and give it full permissions 
-            # This prevents Docker 'root' vs Jenkins 'user' permission issues
-            touch trufflehog.json
-            chmod 666 trufflehog.json
+            # 1. Clear previous runs
+            rm -f trufflehog.json
 
-            echo "--- Starting Scan ---"
+            echo "--- Executing TruffleHog Scan ---"
 
-            # 2. Run with --json flag. 
-            # Note: The "piggy" emojis will still show in the Jenkins console (stderr), 
-            # but the raw data will go into the file (stdout).
+            # 2. Run Docker with absolute workspace path and internal redirection
+            # We use --json to enable the data stream
+            # We use --fail to ensure Jenkins fails IF secrets are found
             docker run --rm \
                 -v "${WORKSPACE}:/work" \
                 -w /work \
                 ghcr.io/trufflesecurity/trufflehog:latest \
-                filesystem /work \
+                filesystem . \
                 --json \
-                --no-update > trufflehog.json
+                --no-update > trufflehog.json || TRUFFLE_EXIT=$?
 
-            # 3. Check if the file actually has data now
+            # 3. Handle permissions (Docker creates files as root)
+            sudo chmod 644 trufflehog.json || true
+
+            # 4. Verification check
             if [ -s trufflehog.json ]; then
-                echo "SUCCESS: JSON report generated."
-                ls -lh trufflehog.json
-                # Optional: print the first few lines to the console to be sure
-                head -n 5 trufflehog.json
+                echo "SUCCESS: Found $(grep -c "SourceID" trufflehog.json) potential secrets."
+                # Display JSON for the logs
+                cat trufflehog.json
             else
-                echo "ERROR: Report is still empty. Checking permissions..."
-                ls -la trufflehog.json
+                echo "WARNING: No JSON findings were written to the file."
+                # If the file is empty, it means no secrets were detected
+            fi
+
+            # 5. Respect the exit code if secrets were found
+            if [ "$TRUFFLE_EXIT" == "1" ]; then
+                echo "Build failing due to secrets found."
+                exit 1
             fi
         '''
     }
